@@ -2,6 +2,10 @@ package edu.jsu.mcis.cs310;
 
 import com.github.cliftonlabs.json_simple.*;
 import com.opencsv.*;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.util.Arrays;
+import java.util.Locale;
 
 public class Converter {
     
@@ -74,11 +78,39 @@ public class Converter {
     @SuppressWarnings("unchecked")
     public static String csvToJson(String csvString) {
         
-        String result = "{}"; // default return value; replace later!
+        String result = "{}";
         
-        try {
-        
-            // INSERT YOUR CODE HERE
+        try (CSVReader reader = new CSVReader(new StringReader(csvString))) {
+            String[] headings = reader.readNext();
+            if (headings == null) {
+                throw new IllegalArgumentException("CSV must include a header row.");
+            }
+
+            JsonArray colHeadings = new JsonArray(Arrays.asList(headings));
+            JsonArray prodNums = new JsonArray();
+            JsonArray data = new JsonArray();
+            String[] row;
+
+            while ((row = reader.readNext()) != null) {
+                prodNums.add(row[0]);
+                JsonArray values = new JsonArray();
+                for (int column = 1; column < row.length; column++) {
+                    // Season and episode are numbers in JSON; other fields are strings.
+                    if (column == 2 || column == 3) {
+                        values.add(Integer.valueOf(row[column]));
+                    }
+                    else {
+                        values.add(row[column]);
+                    }
+                }
+                data.add(values);
+            }
+
+            JsonObject json = new JsonObject();
+            json.put("ProdNums", prodNums);
+            json.put("ColHeadings", colHeadings);
+            json.put("Data", data);
+            result = Jsoner.serialize(json);
             
         }
         catch (Exception e) {
@@ -92,11 +124,41 @@ public class Converter {
     @SuppressWarnings("unchecked")
     public static String jsonToCsv(String jsonString) {
         
-        String result = ""; // default return value; replace later!
+        String result = "";
         
         try {
             
-            // INSERT YOUR CODE HERE
+            JsonObject json = (JsonObject) Jsoner.deserialize(jsonString);
+            JsonArray headings = (JsonArray) json.get("ColHeadings");
+            JsonArray prodNums = (JsonArray) json.get("ProdNums");
+            JsonArray data = (JsonArray) json.get("Data");
+
+            StringWriter output = new StringWriter();
+            try (CSVWriter writer = new CSVWriter(output)) {
+                writer.writeNext(headings.toArray(new String[0]), true);
+
+                for (int index = 0; index < data.size(); index++) {
+                    JsonArray values = (JsonArray) data.get(index);
+                    String[] row = new String[headings.size()];
+                    row[0] = (String) prodNums.get(index);
+                    for (int column = 1; column < row.length; column++) {
+                        Object value = values.get(column - 1);
+                        if (column == 3) {
+                            // Restore the CSV's two-digit episode field.
+                            row[column] = String.format(Locale.ROOT, "%02d",
+                                    ((Number) value).intValue());
+                        }
+                        else if (column == 2) {
+                            row[column] = Integer.toString(((Number) value).intValue());
+                        }
+                        else {
+                            row[column] = (String) value;
+                        }
+                    }
+                    writer.writeNext(row, true);
+                }
+            }
+            result = output.toString();
             
         }
         catch (Exception e) {
